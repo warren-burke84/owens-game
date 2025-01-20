@@ -42,7 +42,8 @@ export class Game extends Scene
             D: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.D)
         };
 
-        this.ball = this.add.circle(512, 20, 20, 0xff0000);
+        this.ball = this.add.circle(512, 20, 20, 0xffff00);
+        this.ball.setStrokeStyle(2, 0x00ffff);
         this.ballVelocity = new Phaser.Math.Vector2(200, 150);
 
         this.score = 0;
@@ -52,7 +53,7 @@ export class Game extends Scene
         this.playerHealth = 100;
 
         this.star = this.add.image(100, 100, 'star');
-        this.starVelocity = new Phaser.Math.Vector2(100, 100);
+        this.starVelocity = new Phaser.Math.Vector2(300, 300);
 
         this.presents = [];
         this.triangleTimers = new Map();
