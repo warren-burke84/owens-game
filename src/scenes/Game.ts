@@ -16,8 +16,10 @@ export class Game extends Scene
     starVelocity: Phaser.Math.Vector2;
     wasdKeys: { [key: string]: Phaser.Input.Keyboard.Key };
     presents: Phaser.GameObjects.Polygon[];
-    triangleSpawnTimer: Phaser.Time.TimerEvent;
-    triangleTimers: Map<Phaser.GameObjects.Polygon, Phaser.Time.TimerEvent>;
+    highScore: number;
+    highScoreText: Phaser.GameObjects.Text;
+    trianglesCollected: number;
+    triangles: Phaser.GameObjects.Polygon[];
 
     constructor ()
     {
@@ -27,12 +29,12 @@ export class Game extends Scene
     create ()
     {
         this.camera = this.cameras.main;
-        this.camera.setBackgroundColor(0xffa500);
+        this.camera.setBackgroundColor(0xff0000);
 
         this.background = this.add.image(512, 384, 'background');
         this.background.setAlpha(0.5);
 
-        this.rectangle = this.add.rectangle(512, this.cameras.main.height - 50, 200, 100, 0xffa500);
+        this.rectangle = this.add.rectangle(512, this.cameras.main.height - 50, 100, 100, 0xffa500);
 
         this.cursors = this.input.keyboard.createCursorKeys();
         this.wasdKeys = {
@@ -49,41 +51,35 @@ export class Game extends Scene
         this.score = 0;
         this.scoreText = this.add.text(16, 16, 'Score: 0', { fontSize: '32px', fill: '#fff' });
 
-        this.healthBar = this.add.rectangle(512, 10, 800, 20, 0x00ff00);
+        this.healthBar = this.add.rectangle(512, 10, 800, 20, 0xff0000);
         this.playerHealth = 100;
 
         this.star = this.add.image(100, 100, 'star');
         this.starVelocity = new Phaser.Math.Vector2(300, 300);
 
         this.presents = [];
-        this.triangleTimers = new Map();
-        for (let i = 0; i < 5; i++) {
-            const x = Phaser.Math.Between(50, this.cameras.main.width - 50);
-            const y = Phaser.Math.Between(50, this.cameras.main.height - 50);
-            const present = this.add.polygon(x, y, [0, 0, 20, 40, 40, 0], 0x00ff00);
-            this.presents.push(present);
-            const timer = this.time.addEvent({
-                delay: 2500,
-                callback: () => {
-                    present.destroy();
-                    this.triangleTimers.delete(present);
-                },
-                callbackScope: this
-            });
-            this.triangleTimers.set(present, timer);
-        }
-
-        this.triangleSpawnTimer = this.time.addEvent({
-            delay: 2500,
-            callback: this.spawnTriangle,
-            callbackScope: this,
-            loop: true
-        });
 
         this.input.once('pointerdown', () => {
 
             this.scene.start('GameOver');
 
+        });
+
+        this.highScore = parseInt(localStorage.getItem('highScore')) || 0;
+        this.highScoreText = this.add.text(16, 48, 'High Score: ' + this.highScore, { fontSize: '32px', fill: '#00ff00' });
+
+        this.trianglesCollected = 0;
+
+        this.triangles = [];
+
+        this.spawnTriangles();
+
+        // Add code to spawn 3 triangles every 2.5 seconds, each giving 2000 points
+        this.time.addEvent({
+            delay: 2500,
+            callback: this.spawnTriangles,
+            callbackScope: this,
+            loop: true
         });
     }
 
@@ -185,6 +181,14 @@ export class Game extends Scene
             this.starVelocity.y *= -1;
         }
 
+        // Increase star speed only when points are gained from the circle
+        if (this.score % 10 === 0 && this.score !== 0) {
+            this.starVelocity.scale(1.05);
+        }
+        // Cap the star speed
+        this.starVelocity.x = Phaser.Math.Clamp(this.starVelocity.x, -600, 600);
+        this.starVelocity.y = Phaser.Math.Clamp(this.starVelocity.y, -600, 600);
+
         // Change the screen to game over if health reaches 0
         if (this.playerHealth <= 0)
         {
@@ -199,33 +203,69 @@ export class Game extends Scene
 
         // Check for collision between rectangle and presents
         for (let i = 0; i < this.presents.length; i++) {
-            if (Phaser.Geom.Intersects.RectangleToRectangle(this.rectangle.getBounds(), this.presents[i].getBounds())) {
+            if (Phaser.Geom.Intersects.RectangleToRectangle(this.rectangle.getBounds(), this.presents[i].getBounds()) && this.presents[i].visible) {
                 this.score += 2000;
                 this.scoreText.setText('Score: ' + this.score);
                 this.presents[i].destroy();
                 this.presents.splice(i, 1);
                 i--; // Adjust index after removal
+                this.trianglesCollected++;
             }
+        }
+
+        // Update high score
+        if (this.score > this.highScore) {
+            this.highScore = this.score;
+            this.highScoreText.setText('High Score: ' + this.highScore);
+            localStorage.setItem('highScore', this.highScore.toString());
+        }
+
+        // Update health bar color based on player health
+        const redValue = 255 - Math.floor((this.playerHealth / 100) * 255);
+        const greenValue = Math.floor((this.playerHealth / 100) * 255);
+        this.healthBar.setFillStyle(Phaser.Display.Color.GetColor(redValue, greenValue, 0));
+
+        // Update rectangle color based on player health
+        this.rectangle.setFillStyle(Phaser.Display.Color.GetColor(redValue, greenValue, 0));
+
+        // Update triangles
+        for (let i = 0; i < this.triangles.length; i++) {
+            if (this.triangles[i].visible) {
+                this.triangles[i].y += 100 * (delta / 1000);
+                if (this.triangles[i].y > this.cameras.main.height) {
+                    this.triangles[i].destroy();
+                    this.triangles.splice(i, 1);
+                    i--; // Adjust index after removal
+                }
+            }
+        }
+
+        // Check for collision between rectangle and triangles
+        for (let i = 0; i < this.triangles.length; i++) {
+            if (Phaser.Geom.Intersects.RectangleToRectangle(this.rectangle.getBounds(), this.triangles[i].getBounds()) && this.triangles[i].visible) {
+                this.score += 2000;
+                this.scoreText.setText('Score: ' + this.score);
+                this.triangles[i].destroy();
+                this.triangles.splice(i, 1);
+                i--; // Adjust index after removal
+            }
+        }
+
+        // Spawn new triangles if needed
+        if (this.triangles.length < 3) {
+            this.spawnTriangles();
         }
     }
 
-    spawnTriangle() {
-        let x, y;
-        do {
-            x = Phaser.Math.Between(50, this.cameras.main.width - 50);
-            y = Phaser.Math.Between(50, this.cameras.main.height - 50);
-        } while (Phaser.Geom.Intersects.RectangleToRectangle(this.rectangle.getBounds(), new Phaser.Geom.Rectangle(x, y, 40, 40)));
-
-        const present = this.add.polygon(x, y, [0, 0, 20, 40, 40, 0], 0x00ff00);
-        this.presents.push(present);
-        const timer = this.time.addEvent({
-            delay: 2500,
-            callback: () => {
-                present.destroy();
-                this.triangleTimers.delete(present);
-            },
-            callbackScope: this
-        });
-        this.triangleTimers.set(present, timer);
+    spawnTriangles() {
+        for (let i = this.triangles.length; i < 3; i++) {
+            const triangle = this.add.polygon(
+                Phaser.Math.Between(50, this.cameras.main.width - 50),
+                -50,
+                [0, 0, 20, 40, -20, 40],
+                0x00ff00
+            );
+            this.triangles.push(triangle);
+        }
     }
 }
